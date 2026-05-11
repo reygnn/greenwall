@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Keyer-green "wall" -->
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M24,28 L84,28 L84,80 L24,80 Z" />
+    <!-- AMOLED-black motif cutout -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M40,42 L68,42 L68,66 L40,66 Z" />
+</vector>

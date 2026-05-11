@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">greenwall</string>
+
+    <!-- Editor — Empty-State -->
+    <string name="editor_empty_state">greenwall\n— Gerüst —</string>
+</resources>
