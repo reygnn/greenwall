@@ -196,6 +196,8 @@ English and Deutsch. The app follows your system locale.
 - [`TESTING_CONVENTIONS.md`](TESTING_CONVENTIONS.md) — how tests are
   written in this project, including the Robolectric NATIVE graphics
   gotcha and the `setHasAlpha` + PNG-IHDR invariant.
+- [`WHY_CLAUDE.md`](WHY_CLAUDE.md) — why this project is co-authored
+  with Claude.
 - [`TODO.md`](TODO.md) — open work items and history.
 
 ---

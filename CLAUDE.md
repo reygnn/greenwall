@@ -12,7 +12,8 @@ and actionable.
 > dark theme only, en/de locales only, release signed with the debug keystore)
 > are deliberate — do not flag them as compatibility or "best-practice" issues.
 
-For test details, see `TESTING_CONVENTIONS.md`. greenwall is a sibling to
+For test details, see `TESTING_CONVENTIONS.md`. For the philosophy behind
+the human-Claude workflow, see `WHY_CLAUDE.md`. greenwall is a sibling to
 **coverup** (structural template) and **chiaroscuro** (pixel-kernel /
 `setHasAlpha` reference); look there for patterns rather than re-inventing.
 
