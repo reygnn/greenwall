@@ -16,8 +16,10 @@
     <string name="output_amoled">AMOLED</string>
     <string name="output_transparent">Transparent</string>
 
-    <!-- Accessibility / Content-Descriptions -->
+    <!-- Accessibility / Content-Descriptions (via Modifier.semantics) -->
+    <string name="cd_editor_fab">Editor-Menü umschalten</string>
     <string name="cd_toggle_analysis">Analyse-Overlay umschalten</string>
+    <string name="cd_toggle_preview">Vorschau umschalten</string>
     <string name="cd_redetect_keyer">Keyer-Farbe neu erkennen</string>
     <string name="cd_open_commands">Befehle öffnen</string>
     <string name="cd_close_panel">Panel schließen</string>

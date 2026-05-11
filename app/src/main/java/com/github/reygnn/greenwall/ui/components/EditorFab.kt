@@ -18,9 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.github.reygnn.greenwall.R
 import kotlin.math.roundToInt
 
 /**
@@ -34,6 +38,9 @@ import kotlin.math.roundToInt
  *  - 🎯  re-run keyer auto-detection on the current source
  *  - 🖼  toggle the preview view (final output before saving)
  *  - 👁  toggle the analysis overlay
+ *
+ * Every button carries an explicit content description for TalkBack —
+ * the bare emoji is not enough on its own.
  *
  * Position is local UI state — not persisted across process death.
  */
@@ -68,26 +75,46 @@ fun EditorFab(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    MiniFab(symbol = "☰", enabled = true) {
+                    MiniFab(
+                        symbol = "☰",
+                        contentDescription = stringResource(R.string.cd_open_commands),
+                        enabled = true,
+                    ) {
                         expanded = false
                         onOpenCommands()
                     }
-                    MiniFab(symbol = "🎯", enabled = canAnalyze) {
+                    MiniFab(
+                        symbol = "🎯",
+                        contentDescription = stringResource(R.string.cd_redetect_keyer),
+                        enabled = canAnalyze,
+                    ) {
                         expanded = false
                         onRedetectKeyer()
                     }
-                    MiniFab(symbol = "🖼", enabled = canAnalyze) {
+                    MiniFab(
+                        symbol = "🖼",
+                        contentDescription = stringResource(R.string.cd_toggle_preview),
+                        enabled = canAnalyze,
+                    ) {
                         expanded = false
                         onTogglePreview()
                     }
-                    MiniFab(symbol = "👁", enabled = canAnalyze) {
+                    MiniFab(
+                        symbol = "👁",
+                        contentDescription = stringResource(R.string.cd_toggle_analysis),
+                        enabled = canAnalyze,
+                    ) {
                         expanded = false
                         onToggleAnalysis()
                     }
                 }
             }
 
-            FloatingActionButton(onClick = { expanded = !expanded }) {
+            val mainFabDesc = stringResource(R.string.cd_editor_fab)
+            FloatingActionButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.semantics { contentDescription = mainFabDesc },
+            ) {
                 Text(if (expanded) "✕" else "🛠", fontSize = 24.sp)
             }
         }
@@ -95,9 +122,17 @@ fun EditorFab(
 }
 
 @Composable
-private fun MiniFab(symbol: String, enabled: Boolean, onClick: () -> Unit) {
+private fun MiniFab(
+    symbol: String,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     SmallFloatingActionButton(
         onClick = { if (enabled) onClick() },
+        modifier = Modifier.semantics {
+            this.contentDescription = contentDescription
+        },
     ) {
         Text(symbol, fontSize = 20.sp)
     }

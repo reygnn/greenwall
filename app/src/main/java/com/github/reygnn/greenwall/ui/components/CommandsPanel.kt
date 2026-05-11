@@ -33,6 +33,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.github.reygnn.greenwall.R
@@ -91,7 +93,11 @@ fun CommandsPanel(
                     text = stringResource(R.string.cp_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
-                TextButton(onClick = onClose) { Text("✕") }
+                val closeDesc = stringResource(R.string.cd_close_panel)
+                TextButton(
+                    onClick = onClose,
+                    modifier = Modifier.semantics { contentDescription = closeDesc },
+                ) { Text("✕") }
             }
 
             OutlinedButton(
