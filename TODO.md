@@ -1,5 +1,11 @@
 # TODO
 
+- [ ] Preview-Bild vor dem Speichern: ein „Preview"-Modus, der das Ergebnis
+  der aktuellen Output-Einstellung (AMOLED oder Transparent angewendet)
+  vollflächig im Canvas rendert, ohne ins Dateisystem zu schreiben. Heute
+  zeigt der Canvas Quelle oder Analyse-Overlay; das fertige Ausgabebild
+  bekommt man erst nach `Save PNG` zu sehen.
+
 - [x] Color-Picker / Pipette für die Keyer-Hintergrundfarbe als Fallback,
   wenn die Auto-Erkennung nicht eindeutig anschlägt. Umgesetzt in
   `feature/pipette` als Tap-aufs-Canvas: ein Knopf 💧 im CommandsPanel
