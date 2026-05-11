@@ -148,4 +148,85 @@ class ColorMatchTransformTest {
         assertEquals(0, analysis.pixels.size)
         assertEquals(0, analysis.matchCount)
     }
+
+    // ── Despill tests ────────────────────────────────────────────
+
+    @Test
+    fun `despillPixel removes green tint from edge pixel when target is green`() {
+        val green = 0xFF00FF00.toInt()
+        // (10, 214, 10): a typical antialiased motif-edge pixel mostly
+        // composed of green spill. After despill, G should be capped at
+        // max(R=10, B=10) = 10, yielding a dark gray.
+        val edge = 0xFF0AD60A.toInt()
+        assertEquals(0xFF0A0A0A.toInt(), ColorMatchTransform.despillPixel(edge, green))
+    }
+
+    @Test
+    fun `despillPixel removes blue tint from edge pixel when target is blue`() {
+        val blue = 0xFF0000FF.toInt()
+        // (10, 40, 240) → B capped at max(R=10, G=40) = 40 → (10, 40, 40).
+        val edge = 0xFF0A28F0.toInt()
+        assertEquals(0xFF0A2828.toInt(), ColorMatchTransform.despillPixel(edge, blue))
+    }
+
+    @Test
+    fun `despillPixel removes pink tint when target has two dominant channels`() {
+        val pink = 0xFFFF00FF.toInt()
+        // (250, 60, 250) → R and B are dominant for pink; both capped at
+        // the pixel's non-dominant G = 60 → (60, 60, 60).
+        val edge = 0xFFFA3CFA.toInt()
+        assertEquals(0xFF3C3C3C.toInt(), ColorMatchTransform.despillPixel(edge, pink))
+    }
+
+    @Test
+    fun `despillPixel is a no-op for an achromatic target`() {
+        val gray = 0xFF808080.toInt() // all channels equal → no channel is dominant
+        val pixel = 0xFFABCDEF.toInt()
+        assertEquals(pixel, ColorMatchTransform.despillPixel(pixel, gray))
+    }
+
+    @Test
+    fun `despillPixel preserves alpha`() {
+        val green = 0xFF00FF00.toInt()
+        val edgeWithAlpha = 0x800AD60A.toInt() // alpha 0x80
+        assertEquals(0x800A0A0A.toInt(), ColorMatchTransform.despillPixel(edgeWithAlpha, green))
+    }
+
+    @Test
+    fun `despillPixel is idempotent`() {
+        val green = 0xFF00FF00.toInt()
+        val edge = 0xFF0AD60A.toInt()
+        val once = ColorMatchTransform.despillPixel(edge, green)
+        val twice = ColorMatchTransform.despillPixel(once, green)
+        assertEquals(once, twice)
+    }
+
+    @Test
+    fun `despillPixel leaves a pixel without keyer tint unchanged`() {
+        val green = 0xFF00FF00.toInt()
+        val red = 0xFFFF0000.toInt() // (255, 0, 0) — no green to suppress
+        // G dominant for green target; cap = max(R=255, B=0) = 255; G=min(0,255)=0. No change.
+        assertEquals(red, ColorMatchTransform.despillPixel(red, green))
+    }
+
+    @Test
+    fun `applyAmoled despills non-matching edge pixels`() {
+        val green = 0xFF00FF00.toInt()
+        val edge = 0xFF0AD60A.toInt() // (10, 214, 10): Chebyshev dist to green = 41, won't match @ 24
+        val red = 0xFFFF0000.toInt()
+        val input = intArrayOf(green, edge, red)
+        val out = ColorMatchTransform.applyAmoled(input, green, threshold = 24)
+        assertEquals(ColorMatchTransform.COLOR_AMOLED, out[0])
+        assertEquals(0xFF0A0A0A.toInt(), out[1]) // despill'd to dark gray
+        assertEquals(red, out[2])                // unchanged (no green tint)
+    }
+
+    @Test
+    fun `applyTransparent despills non-matching edge pixels`() {
+        val green = 0xFF00FF00.toInt()
+        val edge = 0xFF0AD60A.toInt()
+        val out = ColorMatchTransform.applyTransparent(intArrayOf(green, edge), green, threshold = 24)
+        assertEquals(ColorMatchTransform.COLOR_TRANSPARENT, out[0])
+        assertEquals(0xFF0A0A0A.toInt(), out[1])
+    }
 }
