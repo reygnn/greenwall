@@ -40,6 +40,7 @@ fun EditorScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val sourceBitmap by viewModel.sourceBitmap.collectAsStateWithLifecycle()
     val overlayBitmap by viewModel.overlayBitmap.collectAsStateWithLifecycle()
+    val previewBitmap by viewModel.previewBitmap.collectAsStateWithLifecycle()
 
     val pickSource = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
@@ -76,11 +77,13 @@ fun EditorScreen(
         ) {
             val sourceImg = remember(sourceBitmap) { sourceBitmap?.asImageBitmap() }
             val overlayImg = remember(overlayBitmap) { overlayBitmap?.asImageBitmap() }
+            val previewImg = remember(previewBitmap) { previewBitmap?.asImageBitmap() }
 
             ImageCanvas(
                 source = sourceImg,
                 overlay = overlayImg,
-                analysisVisible = state.analysisVisible,
+                preview = previewImg,
+                viewMode = state.viewMode,
                 pickerActive = state.pickerActive,
                 onPick = { bx, by -> viewModel.pickColorAt(bx, by) },
                 onCancel = viewModel::disablePicker,
@@ -90,6 +93,7 @@ fun EditorScreen(
             EditorFab(
                 canAnalyze = state.sourceLoaded,
                 onToggleAnalysis = viewModel::toggleAnalysis,
+                onTogglePreview = viewModel::togglePreview,
                 onRedetectKeyer = viewModel::redetectKeyer,
                 onOpenCommands = { commandsOpen = true },
                 modifier = Modifier

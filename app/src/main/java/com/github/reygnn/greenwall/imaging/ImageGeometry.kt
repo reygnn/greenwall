@@ -2,13 +2,14 @@ package com.github.reygnn.greenwall.imaging
 
 /**
  * Pure-Kotlin geometry helpers for mapping between canvas-space
- * coordinates (Compose pixels) and bitmap-space pixel indices.
+ * coordinates (Compose pixels) and bitmap-space pixel indices,
+ * with optional pan/zoom transforms layered on top of fit-center.
  *
  * No Android imports — JVM-testable without Robolectric.
  */
 internal object ImageGeometry {
 
-    /** Fit-center placement of a bitmap inside a canvas. */
+    /** Placement of a bitmap inside a canvas. */
     data class FitPlacement(
         val drawnW: Float,
         val drawnH: Float,
@@ -18,8 +19,8 @@ internal object ImageGeometry {
 
     /**
      * Computes the fit-center placement of a [bmpW] × [bmpH] bitmap
-     * inside a [canvasW] × [canvasH] canvas. Returns an empty
-     * placement (all zeros) for degenerate inputs.
+     * inside a [canvasW] × [canvasH] canvas (no pan or zoom). Returns
+     * an empty placement (all zeros) for degenerate inputs.
      */
     fun fitCenter(bmpW: Int, bmpH: Int, canvasW: Float, canvasH: Float): FitPlacement {
         if (bmpW <= 0 || bmpH <= 0 || canvasW <= 0f || canvasH <= 0f) {
@@ -37,11 +38,38 @@ internal object ImageGeometry {
     }
 
     /**
+     * Like [fitCenter], but with an additional zoom factor and pan
+     * offset layered on top: the bitmap is first laid out fit-center,
+     * then scaled by [zoom] (uniformly, keeping the same canvas center
+     * as the fixed point), then translated by ([panX], [panY]) in
+     * canvas pixels. Zoom of 1.0 and zero pan reduces to plain
+     * [fitCenter].
+     */
+    fun displayPlacement(
+        bmpW: Int, bmpH: Int,
+        canvasW: Float, canvasH: Float,
+        panX: Float = 0f, panY: Float = 0f,
+        zoom: Float = 1f,
+    ): FitPlacement {
+        val fit = fitCenter(bmpW, bmpH, canvasW, canvasH)
+        if (fit.drawnW <= 0f) return fit
+        val drawnW = fit.drawnW * zoom
+        val drawnH = fit.drawnH * zoom
+        return FitPlacement(
+            drawnW = drawnW,
+            drawnH = drawnH,
+            originX = (canvasW - drawnW) / 2f + panX,
+            originY = (canvasH - drawnH) / 2f + panY,
+        )
+    }
+
+    /**
      * Maps a canvas-space tap at ([canvasX], [canvasY]) to bitmap
-     * pixel indices for a fit-center bitmap of [bmpW] × [bmpH] inside
-     * a canvas of [canvasW] × [canvasH]. Returns `null` if the tap
-     * falls outside the drawn bitmap region (on the surrounding empty
-     * canvas area) or if any dimension is degenerate.
+     * pixel indices for a fit-center bitmap of [bmpW] × [bmpH] in a
+     * canvas of [canvasW] × [canvasH], optionally with a pan offset
+     * and zoom factor (defaults reduce to plain fit-center). Returns
+     * `null` if the tap falls outside the drawn bitmap region or any
+     * dimension is degenerate.
      */
     fun canvasToBitmapPixel(
         canvasX: Float,
@@ -50,8 +78,12 @@ internal object ImageGeometry {
         bmpH: Int,
         canvasW: Float,
         canvasH: Float,
+        panX: Float = 0f,
+        panY: Float = 0f,
+        zoom: Float = 1f,
     ): Pair<Int, Int>? {
-        val placement = fitCenter(bmpW, bmpH, canvasW, canvasH)
+        if (bmpW <= 0 || bmpH <= 0) return null
+        val placement = displayPlacement(bmpW, bmpH, canvasW, canvasH, panX, panY, zoom)
         if (placement.drawnW <= 0f) return null
         val fit = placement.drawnW / bmpW
         val bx = ((canvasX - placement.originX) / fit).toInt()

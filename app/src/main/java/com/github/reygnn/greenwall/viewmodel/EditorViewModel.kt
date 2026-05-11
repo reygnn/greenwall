@@ -16,6 +16,7 @@ import com.github.reygnn.greenwall.imaging.complementaryRgb
 import com.github.reygnn.greenwall.model.EditorState
 import com.github.reygnn.greenwall.model.ExportMessage
 import com.github.reygnn.greenwall.model.OutputMode
+import com.github.reygnn.greenwall.model.ViewMode
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,25 +49,43 @@ class EditorViewModel(
     private val _overlayBitmap = MutableStateFlow<Bitmap?>(null)
     val overlayBitmap: StateFlow<Bitmap?> = _overlayBitmap.asStateFlow()
 
+    private val _previewBitmap = MutableStateFlow<Bitmap?>(null)
+    val previewBitmap: StateFlow<Bitmap?> = _previewBitmap.asStateFlow()
+
     /**
      * Loads the image at [uri]. On success, auto-detects the keyer color
      * from the image's outer border and stores it as the new target.
      * On failure, the source stays unloaded and the prior target is kept.
-     * Resets the picker mode in either case.
+     * Resets the picker mode and view mode in either case, and clears
+     * both cached preview and analysis bitmaps.
      */
     fun loadSource(context: Context, uri: Uri) {
         viewModelScope.launch {
             val bitmap = withContext(ioDispatcher) { loader.load(context, uri) }
             _overlayBitmap.value = null
+            _previewBitmap.value = null
             _sourceBitmap.value = bitmap
             if (bitmap == null) {
-                _state.update { it.copy(sourceLoaded = false, pickerActive = false) }
+                _state.update {
+                    it.copy(
+                        sourceLoaded = false,
+                        pickerActive = false,
+                        viewMode = ViewMode.SOURCE,
+                    )
+                }
                 return@launch
             }
             val detected = withContext(ioDispatcher) {
                 transformer.detectKeyerColor(bitmap, KeyerDetection.DEFAULT_BORDER_PX)
             }
-            _state.update { it.copy(sourceLoaded = true, targetColor = detected, pickerActive = false) }
+            _state.update {
+                it.copy(
+                    sourceLoaded = true,
+                    targetColor = detected,
+                    pickerActive = false,
+                    viewMode = ViewMode.SOURCE,
+                )
+            }
         }
     }
 
@@ -78,6 +97,7 @@ class EditorViewModel(
         if (_state.value.targetColor == normalized) return
         _state.update { it.copy(targetColor = normalized) }
         _overlayBitmap.value = null
+        _previewBitmap.value = null
     }
 
     /** Activates pick-from-canvas mode. No-op if no source is loaded. */
@@ -118,21 +138,42 @@ class EditorViewModel(
         if (_state.value.threshold == clamped) return
         _state.update { it.copy(threshold = clamped) }
         _overlayBitmap.value = null
+        _previewBitmap.value = null
     }
 
     fun setOutputMode(mode: OutputMode) {
+        if (_state.value.outputMode == mode) return
         _state.update { it.copy(outputMode = mode) }
+        // Analysis overlay is independent of outputMode (it shows the match
+        // mask only); only the preview cache needs to drop.
+        _previewBitmap.value = null
     }
 
     /**
-     * Flips the analysis overlay on or off. When turning on, kicks off
-     * an analysis run if no overlay is cached.
+     * Switches the canvas between SOURCE and ANALYSIS. When entering
+     * ANALYSIS, kicks off [runAnalysis] if no overlay is cached. When
+     * called from PREVIEW, switches directly to ANALYSIS.
      */
     fun toggleAnalysis() {
-        val next = !_state.value.analysisVisible
-        _state.update { it.copy(analysisVisible = next) }
-        if (next && _overlayBitmap.value == null) {
+        val current = _state.value.viewMode
+        val next = if (current == ViewMode.ANALYSIS) ViewMode.SOURCE else ViewMode.ANALYSIS
+        _state.update { it.copy(viewMode = next) }
+        if (next == ViewMode.ANALYSIS && _overlayBitmap.value == null) {
             runAnalysis()
+        }
+    }
+
+    /**
+     * Switches the canvas between SOURCE and PREVIEW. When entering
+     * PREVIEW, kicks off [runPreview] if no preview is cached. When
+     * called from ANALYSIS, switches directly to PREVIEW.
+     */
+    fun togglePreview() {
+        val current = _state.value.viewMode
+        val next = if (current == ViewMode.PREVIEW) ViewMode.SOURCE else ViewMode.PREVIEW
+        _state.update { it.copy(viewMode = next) }
+        if (next == ViewMode.PREVIEW && _previewBitmap.value == null) {
+            runPreview()
         }
     }
 
@@ -147,6 +188,27 @@ class EditorViewModel(
                 transformer.analyze(source, target, threshold, overlayColor)
             }
             _overlayBitmap.value = result.overlay
+        }
+    }
+
+    /**
+     * Recomputes the preview bitmap by applying the current [OutputMode]
+     * transformation to the source — same call path as [saveResult], so
+     * the cached preview is 1:1 what would be written to disk.
+     */
+    fun runPreview() {
+        val source = _sourceBitmap.value ?: return
+        val target = _state.value.targetColor
+        val threshold = _state.value.threshold
+        val mode = _state.value.outputMode
+        viewModelScope.launch {
+            val result = withContext(ioDispatcher) {
+                when (mode) {
+                    OutputMode.AMOLED -> transformer.applyAmoled(source, target, threshold)
+                    OutputMode.TRANSPARENT -> transformer.applyTransparent(source, target, threshold)
+                }
+            }
+            _previewBitmap.value = result
         }
     }
 

@@ -29,9 +29,10 @@ import kotlin.math.roundToInt
  * the main FAB to expand the speed-dial, tap a mini-FAB to run its
  * action and collapse.
  *
- * Mini-FABs (top to bottom when expanded):
+ * Mini-FABs (top to bottom when expanded — fan upward from the main FAB):
  *  - ☰  open the floating [CommandsPanel] for less-frequent actions
  *  - 🎯  re-run keyer auto-detection on the current source
+ *  - 🖼  toggle the preview view (final output before saving)
  *  - 👁  toggle the analysis overlay
  *
  * Position is local UI state — not persisted across process death.
@@ -40,6 +41,7 @@ import kotlin.math.roundToInt
 fun EditorFab(
     canAnalyze: Boolean,
     onToggleAnalysis: () -> Unit,
+    onTogglePreview: () -> Unit,
     onRedetectKeyer: () -> Unit,
     onOpenCommands: () -> Unit,
     modifier: Modifier = Modifier,
@@ -73,6 +75,10 @@ fun EditorFab(
                     MiniFab(symbol = "🎯", enabled = canAnalyze) {
                         expanded = false
                         onRedetectKeyer()
+                    }
+                    MiniFab(symbol = "🖼", enabled = canAnalyze) {
+                        expanded = false
+                        onTogglePreview()
                     }
                     MiniFab(symbol = "👁", enabled = canAnalyze) {
                         expanded = false

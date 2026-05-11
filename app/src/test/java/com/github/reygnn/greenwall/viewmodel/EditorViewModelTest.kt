@@ -8,10 +8,12 @@ import com.github.reygnn.greenwall.imaging.complementaryRgb
 import com.github.reygnn.greenwall.model.EditorState
 import com.github.reygnn.greenwall.model.ExportMessage
 import com.github.reygnn.greenwall.model.OutputMode
+import com.github.reygnn.greenwall.model.ViewMode
 import com.github.reygnn.greenwall.testing.MainDispatcherRule
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -35,13 +37,14 @@ class EditorViewModelTest {
         assertEquals(EditorState.DEFAULT_TARGET_COLOR, s.targetColor)
         assertEquals(EditorState.DEFAULT_THRESHOLD, s.threshold)
         assertEquals(OutputMode.AMOLED, s.outputMode)
-        assertFalse(s.analysisVisible)
+        assertEquals(ViewMode.SOURCE, s.viewMode)
         assertFalse(s.pickerActive)
         assertFalse(s.sourceLoaded)
         assertFalse(s.isExporting)
         assertNull(s.exportMessage)
         assertNull(vm.sourceBitmap.value)
         assertNull(vm.overlayBitmap.value)
+        assertNull(vm.previewBitmap.value)
     }
 
     @Test
@@ -81,61 +84,50 @@ class EditorViewModelTest {
         }
 
     @Test
-    fun `loadSource resets pickerActive`() = runTest(mainRule.testDispatcher) {
-        val source = mockk<Bitmap>(relaxed = true)
-        val vm = newViewModel(
-            loader = FakeLoader(returns = source),
-            transformer = FakeTransformer(detectedKeyer = GREEN),
-        )
-        vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
-        advanceUntilIdle()
-        vm.enablePicker()
-        assertTrue(vm.state.value.pickerActive)
-
-        vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
-        advanceUntilIdle()
-
-        assertFalse(vm.state.value.pickerActive)
-    }
-
-    @Test
-    fun `setTargetColor updates state and invalidates the cached overlay`() =
+    fun `loadSource resets pickerActive and viewMode to defaults`() =
         runTest(mainRule.testDispatcher) {
             val source = mockk<Bitmap>(relaxed = true)
-            val overlay = mockk<Bitmap>(relaxed = true)
-            val transformer = FakeTransformer(
-                detectedKeyer = GREEN,
-                analysisOverlay = overlay,
+            val vm = newViewModel(
+                loader = FakeLoader(returns = source),
+                transformer = FakeTransformer(detectedKeyer = GREEN),
             )
-            val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+            vm.enablePicker()
+            vm.toggleAnalysis()
+            advanceUntilIdle()
+            assertTrue(vm.state.value.pickerActive)
+            assertEquals(ViewMode.ANALYSIS, vm.state.value.viewMode)
+
             vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
             advanceUntilIdle()
 
-            vm.toggleAnalysis()
-            advanceUntilIdle()
+            assertFalse(vm.state.value.pickerActive)
+            assertEquals(ViewMode.SOURCE, vm.state.value.viewMode)
+        }
+
+    @Test
+    fun `setTargetColor updates state and invalidates both cached bitmaps`() =
+        runTest(mainRule.testDispatcher) {
+            val (vm, transformer, overlay, preview) = bothCachesWarmed(GREEN)
             assertEquals(overlay, vm.overlayBitmap.value)
+            assertEquals(preview, vm.previewBitmap.value)
 
             vm.setTargetColor(BLUE)
+
             assertEquals(BLUE, vm.state.value.targetColor)
-            assertNull("overlay must be invalidated", vm.overlayBitmap.value)
+            assertNull(vm.overlayBitmap.value)
+            assertNull(vm.previewBitmap.value)
+            // Sanity: the transformer was used to warm both caches once each.
+            assertEquals(1, transformer.analyzeCalls)
+            assertEquals(1, transformer.amoledCalls)
         }
 
     @Test
     fun `setTargetColor is a no-op when the value already matches`() =
         runTest(mainRule.testDispatcher) {
-            val source = mockk<Bitmap>(relaxed = true)
-            val overlay = mockk<Bitmap>(relaxed = true)
-            val transformer = FakeTransformer(
-                detectedKeyer = GREEN,
-                analysisOverlay = overlay,
-            )
-            val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
-            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
-            advanceUntilIdle()
-            vm.toggleAnalysis()
-            advanceUntilIdle()
+            val (vm, _, overlay, _) = bothCachesWarmed(GREEN)
 
-            // Already at GREEN; re-setting it must not clear the overlay.
             vm.setTargetColor(GREEN)
 
             assertEquals(overlay, vm.overlayBitmap.value)
@@ -144,7 +136,6 @@ class EditorViewModelTest {
     @Test
     fun `setTargetColor normalizes alpha to FF`() = runTest(mainRule.testDispatcher) {
         val vm = newViewModel()
-        // Caller passes 0x00112233 (alpha = 0). Stored value must be opaque.
         vm.setTargetColor(0x00112233)
         assertEquals(0xFF112233.toInt(), vm.state.value.targetColor)
     }
@@ -161,40 +152,39 @@ class EditorViewModelTest {
     }
 
     @Test
-    fun `setThreshold invalidates the cached overlay`() = runTest(mainRule.testDispatcher) {
-        val source = mockk<Bitmap>(relaxed = true)
-        val overlay = mockk<Bitmap>(relaxed = true)
-        val transformer = FakeTransformer(
-            detectedKeyer = GREEN,
-            analysisOverlay = overlay,
-        )
-        val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
-        vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
-        advanceUntilIdle()
-        vm.toggleAnalysis()
-        advanceUntilIdle()
+    fun `setThreshold invalidates both cached bitmaps`() = runTest(mainRule.testDispatcher) {
+        val (vm, _, _, _) = bothCachesWarmed(GREEN)
 
         vm.setThreshold(100)
 
         assertNull(vm.overlayBitmap.value)
+        assertNull(vm.previewBitmap.value)
     }
 
     @Test
-    fun `setOutputMode updates state`() = runTest(mainRule.testDispatcher) {
-        val vm = newViewModel()
-        assertEquals(OutputMode.AMOLED, vm.state.value.outputMode)
+    fun `setOutputMode updates state and invalidates only the preview cache`() =
+        runTest(mainRule.testDispatcher) {
+            val (vm, _, overlay, preview) = bothCachesWarmed(GREEN)
+            assertEquals(OutputMode.AMOLED, vm.state.value.outputMode)
 
-        vm.setOutputMode(OutputMode.TRANSPARENT)
-        assertEquals(OutputMode.TRANSPARENT, vm.state.value.outputMode)
-    }
+            vm.setOutputMode(OutputMode.TRANSPARENT)
+
+            assertEquals(OutputMode.TRANSPARENT, vm.state.value.outputMode)
+            assertEquals(overlay, vm.overlayBitmap.value) // overlay still valid
+            assertNull(vm.previewBitmap.value)            // preview invalidated
+            // ensure the assertion isn't a false positive
+            assertNotNull(preview)
+        }
+
+    // ── viewMode toggles ─────────────────────────────────────────
 
     @Test
-    fun `toggleAnalysis flips analysisVisible`() = runTest(mainRule.testDispatcher) {
+    fun `toggleAnalysis flips between SOURCE and ANALYSIS`() = runTest(mainRule.testDispatcher) {
         val vm = newViewModel()
         vm.toggleAnalysis()
-        assertTrue(vm.state.value.analysisVisible)
+        assertEquals(ViewMode.ANALYSIS, vm.state.value.viewMode)
         vm.toggleAnalysis()
-        assertFalse(vm.state.value.analysisVisible)
+        assertEquals(ViewMode.SOURCE, vm.state.value.viewMode)
     }
 
     @Test
@@ -271,6 +261,124 @@ class EditorViewModelTest {
         assertNull(vm.overlayBitmap.value)
     }
 
+    // ── Preview ──────────────────────────────────────────────────
+
+    @Test
+    fun `togglePreview flips between SOURCE and PREVIEW`() = runTest(mainRule.testDispatcher) {
+        val source = mockk<Bitmap>(relaxed = true)
+        val vm = newViewModel(
+            loader = FakeLoader(returns = source),
+            transformer = FakeTransformer(detectedKeyer = GREEN),
+        )
+        vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+        advanceUntilIdle()
+
+        vm.togglePreview()
+        advanceUntilIdle()
+        assertEquals(ViewMode.PREVIEW, vm.state.value.viewMode)
+
+        vm.togglePreview()
+        assertEquals(ViewMode.SOURCE, vm.state.value.viewMode)
+    }
+
+    @Test
+    fun `togglePreview on triggers preview compute when no cache`() =
+        runTest(mainRule.testDispatcher) {
+            val source = mockk<Bitmap>(relaxed = true)
+            val preview = mockk<Bitmap>(relaxed = true)
+            val transformer = FakeTransformer(
+                detectedKeyer = GREEN,
+                amoledOutput = preview,
+            )
+            val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+
+            vm.togglePreview()
+            advanceUntilIdle()
+
+            assertEquals(preview, vm.previewBitmap.value)
+            assertEquals(1, transformer.amoledCalls)
+        }
+
+    @Test
+    fun `togglePreview reuses the cached preview on subsequent toggles`() =
+        runTest(mainRule.testDispatcher) {
+            val source = mockk<Bitmap>(relaxed = true)
+            val preview = mockk<Bitmap>(relaxed = true)
+            val transformer = FakeTransformer(
+                detectedKeyer = GREEN,
+                amoledOutput = preview,
+            )
+            val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+            vm.togglePreview()
+            advanceUntilIdle()
+            vm.togglePreview()
+
+            vm.togglePreview()
+            advanceUntilIdle()
+
+            assertEquals(1, transformer.amoledCalls)
+            assertEquals(preview, vm.previewBitmap.value)
+        }
+
+    @Test
+    fun `runPreview in AMOLED mode calls applyAmoled and caches its output`() =
+        runTest(mainRule.testDispatcher) {
+            val source = mockk<Bitmap>(relaxed = true)
+            val amoledOut = mockk<Bitmap>(relaxed = true)
+            val transformer = FakeTransformer(detectedKeyer = GREEN, amoledOutput = amoledOut)
+            val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+
+            vm.runPreview()
+            advanceUntilIdle()
+
+            assertEquals(1, transformer.amoledCalls)
+            assertEquals(0, transformer.transparentCalls)
+            assertEquals(amoledOut, vm.previewBitmap.value)
+        }
+
+    @Test
+    fun `runPreview in TRANSPARENT mode calls applyTransparent and caches its output`() =
+        runTest(mainRule.testDispatcher) {
+            val source = mockk<Bitmap>(relaxed = true)
+            val transparentOut = mockk<Bitmap>(relaxed = true)
+            val transformer = FakeTransformer(
+                detectedKeyer = GREEN,
+                transparentOutput = transparentOut,
+            )
+            val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+            vm.setOutputMode(OutputMode.TRANSPARENT)
+
+            vm.runPreview()
+            advanceUntilIdle()
+
+            assertEquals(0, transformer.amoledCalls)
+            assertEquals(1, transformer.transparentCalls)
+            assertEquals(transparentOut, vm.previewBitmap.value)
+        }
+
+    @Test
+    fun `runPreview is a no-op when no source is loaded`() = runTest(mainRule.testDispatcher) {
+        val transformer = FakeTransformer(detectedKeyer = 0)
+        val vm = newViewModel(transformer = transformer)
+
+        vm.runPreview()
+        advanceUntilIdle()
+
+        assertEquals(0, transformer.amoledCalls)
+        assertEquals(0, transformer.transparentCalls)
+        assertNull(vm.previewBitmap.value)
+    }
+
+    // ── Keyer redetect ───────────────────────────────────────────
+
     @Test
     fun `redetectKeyer re-runs detection on the current source`() =
         runTest(mainRule.testDispatcher) {
@@ -281,7 +389,6 @@ class EditorViewModelTest {
             advanceUntilIdle()
             assertEquals(1, transformer.detectCalls)
 
-            // Manual override, then ask for re-detection.
             vm.setTargetColor(PINK)
             assertEquals(PINK, vm.state.value.targetColor)
 
@@ -351,7 +458,7 @@ class EditorViewModelTest {
             val source = mockk<Bitmap>(relaxed = true).apply {
                 every { width } returns 100
                 every { height } returns 100
-                every { getPixel(50, 50) } returns 0x00112233 // alpha 0 to verify normalization
+                every { getPixel(50, 50) } returns 0x00112233
             }
             val vm = newViewModel(
                 loader = FakeLoader(returns = source),
@@ -541,6 +648,38 @@ class EditorViewModelTest {
         }
 
     // ── Fixtures ─────────────────────────────────────────────────
+
+    /**
+     * Builds a VM with a loaded source and both analysis-overlay and
+     * preview caches warmed, then returns the components for assertion.
+     */
+    private fun TestScope.bothCachesWarmed(target: Int): WarmedCaches {
+        val source = mockk<Bitmap>(relaxed = true)
+        val overlay = mockk<Bitmap>(relaxed = true)
+        val preview = mockk<Bitmap>(relaxed = true)
+        val transformer = FakeTransformer(
+            detectedKeyer = target,
+            analysisOverlay = overlay,
+            amoledOutput = preview,
+        )
+        val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
+        vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+        advanceUntilIdle()
+        vm.toggleAnalysis()
+        advanceUntilIdle()
+        vm.toggleAnalysis() // back to SOURCE so the overlay cache persists
+        vm.togglePreview()
+        advanceUntilIdle()
+        vm.togglePreview() // back to SOURCE so the preview cache persists
+        return WarmedCaches(vm, transformer, overlay, preview)
+    }
+
+    private data class WarmedCaches(
+        val vm: EditorViewModel,
+        val transformer: FakeTransformer,
+        val overlay: Bitmap,
+        val preview: Bitmap,
+    )
 
     private fun newViewModel(
         loader: EditorViewModel.BitmapLoader = FakeLoader(returns = null),

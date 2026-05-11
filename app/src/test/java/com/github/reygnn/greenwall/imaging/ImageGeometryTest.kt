@@ -96,6 +96,76 @@ class ImageGeometryTest {
         assertNull(ImageGeometry.canvasToBitmapPixel(100f, 20f, 200, 100, 200f, 200f))
     }
 
+    // ── displayPlacement (pan + zoom on top of fit-center) ───────
+
+    @Test
+    fun `displayPlacement at zoom 1 and zero pan equals fitCenter`() {
+        val d = ImageGeometry.displayPlacement(100, 100, 200f, 200f)
+        val f = ImageGeometry.fitCenter(100, 100, 200f, 200f)
+        assertEquals(f.drawnW, d.drawnW, EPS)
+        assertEquals(f.drawnH, d.drawnH, EPS)
+        assertEquals(f.originX, d.originX, EPS)
+        assertEquals(f.originY, d.originY, EPS)
+    }
+
+    @Test
+    fun `displayPlacement at zoom 2 doubles drawn size and shifts origin`() {
+        // 100x100 in 200x200 fit-center: drawn 200x200 at (0, 0).
+        // Zoom 2 → drawn 400x400, origin (-100, -100). Canvas center stays at (100, 100).
+        val d = ImageGeometry.displayPlacement(100, 100, 200f, 200f, zoom = 2f)
+        assertEquals(400f, d.drawnW, EPS)
+        assertEquals(400f, d.drawnH, EPS)
+        assertEquals(-100f, d.originX, EPS)
+        assertEquals(-100f, d.originY, EPS)
+    }
+
+    @Test
+    fun `displayPlacement applies pan as a translation on top of zoom`() {
+        val d = ImageGeometry.displayPlacement(
+            bmpW = 100, bmpH = 100,
+            canvasW = 200f, canvasH = 200f,
+            panX = 30f, panY = -20f,
+        )
+        // Without zoom: drawn 200x200, origin (0,0). With pan: origin (30, -20).
+        assertEquals(200f, d.drawnW, EPS)
+        assertEquals(30f, d.originX, EPS)
+        assertEquals(-20f, d.originY, EPS)
+    }
+
+    // ── canvasToBitmapPixel with pan / zoom ──────────────────────
+
+    @Test
+    fun `canvasToBitmapPixel at zoom 2 maps half the bitmap-coordinate range`() {
+        // 100x100 in 200x200 at zoom 2: drawn 400x400 at origin (-100, -100).
+        // Canvas center (100, 100) is the bitmap center pixel (50, 50).
+        val center = ImageGeometry.canvasToBitmapPixel(
+            100f, 100f, 100, 100, 200f, 200f, zoom = 2f,
+        )
+        assertEquals(50 to 50, center)
+
+        // Canvas (0, 0) is bitmap (25, 25) because drawn origin is at (-100, -100)
+        // and effective pixel size in canvas units is 4.
+        val tl = ImageGeometry.canvasToBitmapPixel(
+            0f, 0f, 100, 100, 200f, 200f, zoom = 2f,
+        )
+        assertEquals(25 to 25, tl)
+    }
+
+    @Test
+    fun `canvasToBitmapPixel with pan shifts the mapping and out-of-region returns null`() {
+        // 100x100 in 200x200 with pan (50, 0): drawn at (50, 0)..(250, 200).
+        // Canvas (50, 0) → bitmap (0, 0); canvas (0, 0) → outside drawn region → null.
+        val origin = ImageGeometry.canvasToBitmapPixel(
+            50f, 0f, 100, 100, 200f, 200f, panX = 50f,
+        )
+        assertEquals(0 to 0, origin)
+
+        val leftOfDraw = ImageGeometry.canvasToBitmapPixel(
+            0f, 0f, 100, 100, 200f, 200f, panX = 50f,
+        )
+        assertNull(leftOfDraw)
+    }
+
     companion object {
         private const val EPS = 1e-4f
     }

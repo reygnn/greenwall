@@ -11,6 +11,20 @@ package com.github.reygnn.greenwall.model
 enum class OutputMode { AMOLED, TRANSPARENT }
 
 /**
+ * What the editor canvas is currently showing.
+ *
+ *  - [SOURCE] — the loaded source image, untouched.
+ *  - [ANALYSIS] — the analysis overlay: matching pixels recolored to the
+ *    complement of [EditorState.targetColor], everything else unchanged.
+ *  - [PREVIEW] — the final result for the current [EditorState.outputMode]
+ *    (AMOLED or transparent applied), 1:1 what would be written to disk
+ *    by Save.
+ *
+ * Mutually exclusive: exactly one mode is active at a time.
+ */
+enum class ViewMode { SOURCE, ANALYSIS, PREVIEW }
+
+/**
  * Aggregate editor state. Immutable — the ViewModel emits a new instance
  * on every change.
  */
@@ -20,8 +34,8 @@ data class EditorState(
     /** Chebyshev threshold per channel, clamped to [THRESHOLD_MIN] .. [THRESHOLD_MAX]. */
     val threshold: Int = DEFAULT_THRESHOLD,
     val outputMode: OutputMode = OutputMode.AMOLED,
-    /** When true, the canvas shows the analysis overlay instead of the source. */
-    val analysisVisible: Boolean = false,
+    /** What the canvas is currently rendering. */
+    val viewMode: ViewMode = ViewMode.SOURCE,
     /** When true, the next canvas tap picks a color from the source. */
     val pickerActive: Boolean = false,
     val sourceLoaded: Boolean = false,

@@ -1,10 +1,14 @@
 # TODO
 
-- [ ] Preview-Bild vor dem Speichern: ein „Preview"-Modus, der das Ergebnis
-  der aktuellen Output-Einstellung (AMOLED oder Transparent angewendet)
-  vollflächig im Canvas rendert, ohne ins Dateisystem zu schreiben. Heute
-  zeigt der Canvas Quelle oder Analyse-Overlay; das fertige Ausgabebild
-  bekommt man erst nach `Save PNG` zu sehen.
+- [x] Preview-Bild vor dem Speichern. Umgesetzt in `feature/preview`:
+  neuer `ViewMode`-Enum (SOURCE / ANALYSIS / PREVIEW) ersetzt
+  `analysisVisible`. Im FAB ein neuer 🖼-Knopf schaltet zwischen
+  SOURCE und PREVIEW. Das Preview-Bitmap kommt durch den gleichen
+  `applyAmoled` / `applyTransparent`-Pfad wie das Speichern — also
+  1:1 das, was beim Save rauskäme. Cache wird bei Änderungen an
+  `targetColor`, `threshold`, `outputMode` oder beim Bildladen
+  invalidiert. Pan + Zoom (1.0..20.0, Pinch um den Centroid) gilt
+  für alle drei View-Modes und respektiert die Picker-Mathe.
 
 - [x] Color-Picker / Pipette für die Keyer-Hintergrundfarbe als Fallback,
   wenn die Auto-Erkennung nicht eindeutig anschlägt. Umgesetzt in
