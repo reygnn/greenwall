@@ -25,5 +25,6 @@
     <!-- Export-Meldungen -->
     <string name="msg_saved">✅ Gespeichert!</string>
     <string name="msg_error">❌ Fehler: %1$s</string>
-    <string name="export_default_filename">greenwall.png</string>
+    <string name="export_default_filename_amoled">greenwall_amoled.png</string>
+    <string name="export_default_filename_transparent">greenwall_transparent.png</string>
 </resources>

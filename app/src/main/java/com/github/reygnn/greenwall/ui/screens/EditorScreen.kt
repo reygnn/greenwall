@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.reygnn.greenwall.R
 import com.github.reygnn.greenwall.model.ExportMessage
+import com.github.reygnn.greenwall.model.OutputMode
 import com.github.reygnn.greenwall.ui.components.CommandsPanel
 import com.github.reygnn.greenwall.ui.components.EditorFab
 import com.github.reygnn.greenwall.ui.components.ImageCanvas
@@ -66,7 +67,8 @@ fun EditorScreen(
         }
     }
 
-    val defaultFilename = stringResource(R.string.export_default_filename)
+    val defaultFilenameAmoled = stringResource(R.string.export_default_filename_amoled)
+    val defaultFilenameTransparent = stringResource(R.string.export_default_filename_transparent)
     var commandsOpen by remember { mutableStateOf(false) }
 
     Scaffold { padding ->
@@ -116,7 +118,14 @@ fun EditorScreen(
                     onThresholdChange = viewModel::setThreshold,
                     onOutputModeChange = viewModel::setOutputMode,
                     onSave = {
-                        viewModel.saveResult(context, generateFilename(defaultFilename))
+                        val fallback = when (state.outputMode) {
+                            OutputMode.AMOLED -> defaultFilenameAmoled
+                            OutputMode.TRANSPARENT -> defaultFilenameTransparent
+                        }
+                        viewModel.saveResult(
+                            context,
+                            generateFilename(state.outputMode, fallback),
+                        )
                     },
                     onClose = { commandsOpen = false },
                     modifier = Modifier
@@ -128,7 +137,8 @@ fun EditorScreen(
     }
 }
 
-private fun generateFilename(default: String): String {
+private fun generateFilename(outputMode: OutputMode, default: String): String {
     val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-    return "greenwall_$ts.png".ifBlank { default }
+    val suffix = outputMode.name.lowercase(Locale.US)
+    return "greenwall_${ts}_$suffix.png".ifBlank { default }
 }
