@@ -8,13 +8,9 @@
     <!-- Commands panel -->
     <string name="cp_title">Commands</string>
     <string name="bc_pick_source">📂 Pick image</string>
+    <string name="cp_use_picker">💧 Tap on image</string>
     <string name="bc_threshold">Threshold</string>
     <string name="bc_save_png">💾 Save PNG</string>
-
-    <!-- Keyer color presets -->
-    <string name="preset_green">Green</string>
-    <string name="preset_blue">Blue</string>
-    <string name="preset_pink">Pink</string>
 
     <!-- Output modes -->
     <string name="output_amoled">AMOLED</string>

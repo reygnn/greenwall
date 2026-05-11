@@ -7,9 +7,9 @@ import app.cash.turbine.test
 import com.github.reygnn.greenwall.imaging.complementaryRgb
 import com.github.reygnn.greenwall.model.EditorState
 import com.github.reygnn.greenwall.model.ExportMessage
-import com.github.reygnn.greenwall.model.KeyerPreset
 import com.github.reygnn.greenwall.model.OutputMode
 import com.github.reygnn.greenwall.testing.MainDispatcherRule
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -32,10 +32,11 @@ class EditorViewModelTest {
     fun `initial state matches the documented defaults`() = runTest(mainRule.testDispatcher) {
         val vm = newViewModel()
         val s = vm.state.value
-        assertEquals(KeyerPreset.GREEN.argb, s.targetColor)
+        assertEquals(EditorState.DEFAULT_TARGET_COLOR, s.targetColor)
         assertEquals(EditorState.DEFAULT_THRESHOLD, s.threshold)
         assertEquals(OutputMode.AMOLED, s.outputMode)
         assertFalse(s.analysisVisible)
+        assertFalse(s.pickerActive)
         assertFalse(s.sourceLoaded)
         assertFalse(s.isExporting)
         assertNull(s.exportMessage)
@@ -80,24 +81,42 @@ class EditorViewModelTest {
         }
 
     @Test
+    fun `loadSource resets pickerActive`() = runTest(mainRule.testDispatcher) {
+        val source = mockk<Bitmap>(relaxed = true)
+        val vm = newViewModel(
+            loader = FakeLoader(returns = source),
+            transformer = FakeTransformer(detectedKeyer = GREEN),
+        )
+        vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+        advanceUntilIdle()
+        vm.enablePicker()
+        assertTrue(vm.state.value.pickerActive)
+
+        vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.pickerActive)
+    }
+
+    @Test
     fun `setTargetColor updates state and invalidates the cached overlay`() =
         runTest(mainRule.testDispatcher) {
             val source = mockk<Bitmap>(relaxed = true)
             val overlay = mockk<Bitmap>(relaxed = true)
             val transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 analysisOverlay = overlay,
             )
             val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
             vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
             advanceUntilIdle()
 
-            vm.toggleAnalysis() // populates overlay
+            vm.toggleAnalysis()
             advanceUntilIdle()
             assertEquals(overlay, vm.overlayBitmap.value)
 
-            vm.setTargetColor(KeyerPreset.BLUE.argb)
-            assertEquals(KeyerPreset.BLUE.argb, vm.state.value.targetColor)
+            vm.setTargetColor(BLUE)
+            assertEquals(BLUE, vm.state.value.targetColor)
             assertNull("overlay must be invalidated", vm.overlayBitmap.value)
         }
 
@@ -107,7 +126,7 @@ class EditorViewModelTest {
             val source = mockk<Bitmap>(relaxed = true)
             val overlay = mockk<Bitmap>(relaxed = true)
             val transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 analysisOverlay = overlay,
             )
             val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
@@ -117,16 +136,17 @@ class EditorViewModelTest {
             advanceUntilIdle()
 
             // Already at GREEN; re-setting it must not clear the overlay.
-            vm.setTargetColor(KeyerPreset.GREEN.argb)
+            vm.setTargetColor(GREEN)
 
             assertEquals(overlay, vm.overlayBitmap.value)
         }
 
     @Test
-    fun `applyPreset forwards to setTargetColor`() = runTest(mainRule.testDispatcher) {
+    fun `setTargetColor normalizes alpha to FF`() = runTest(mainRule.testDispatcher) {
         val vm = newViewModel()
-        vm.applyPreset(KeyerPreset.PINK)
-        assertEquals(KeyerPreset.PINK.argb, vm.state.value.targetColor)
+        // Caller passes 0x00112233 (alpha = 0). Stored value must be opaque.
+        vm.setTargetColor(0x00112233)
+        assertEquals(0xFF112233.toInt(), vm.state.value.targetColor)
     }
 
     @Test
@@ -145,7 +165,7 @@ class EditorViewModelTest {
         val source = mockk<Bitmap>(relaxed = true)
         val overlay = mockk<Bitmap>(relaxed = true)
         val transformer = FakeTransformer(
-            detectedKeyer = KeyerPreset.GREEN.argb,
+            detectedKeyer = GREEN,
             analysisOverlay = overlay,
         )
         val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
@@ -183,7 +203,7 @@ class EditorViewModelTest {
             val source = mockk<Bitmap>(relaxed = true)
             val overlay = mockk<Bitmap>(relaxed = true)
             val transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 analysisOverlay = overlay,
             )
             val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
@@ -203,18 +223,18 @@ class EditorViewModelTest {
             val source = mockk<Bitmap>(relaxed = true)
             val overlay = mockk<Bitmap>(relaxed = true)
             val transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 analysisOverlay = overlay,
             )
             val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
             vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
             advanceUntilIdle()
-            vm.toggleAnalysis() // on, cache populates
+            vm.toggleAnalysis()
             advanceUntilIdle()
-            vm.toggleAnalysis() // off
+            vm.toggleAnalysis()
             assertEquals(1, transformer.analyzeCalls)
 
-            vm.toggleAnalysis() // on again, cache still valid
+            vm.toggleAnalysis()
             advanceUntilIdle()
 
             assertEquals("analyze must not be re-run while cache is valid", 1, transformer.analyzeCalls)
@@ -226,7 +246,7 @@ class EditorViewModelTest {
         runTest(mainRule.testDispatcher) {
             val source = mockk<Bitmap>(relaxed = true)
             val transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 analysisOverlay = mockk(relaxed = true),
             )
             val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
@@ -236,10 +256,7 @@ class EditorViewModelTest {
             vm.runAnalysis()
             advanceUntilIdle()
 
-            assertEquals(
-                complementaryRgb(KeyerPreset.GREEN.argb),
-                transformer.lastAnalyzeOverlay,
-            )
+            assertEquals(complementaryRgb(GREEN), transformer.lastAnalyzeOverlay)
         }
 
     @Test
@@ -265,8 +282,8 @@ class EditorViewModelTest {
             assertEquals(1, transformer.detectCalls)
 
             // Manual override, then ask for re-detection.
-            vm.setTargetColor(KeyerPreset.PINK.argb)
-            assertEquals(KeyerPreset.PINK.argb, vm.state.value.targetColor)
+            vm.setTargetColor(PINK)
+            assertEquals(PINK, vm.state.value.targetColor)
 
             vm.redetectKeyer()
             advanceUntilIdle()
@@ -286,13 +303,112 @@ class EditorViewModelTest {
         assertEquals(0, transformer.detectCalls)
     }
 
+    // ── Picker ───────────────────────────────────────────────────
+
+    @Test
+    fun `enablePicker activates picker mode when a source is loaded`() =
+        runTest(mainRule.testDispatcher) {
+            val source = mockk<Bitmap>(relaxed = true)
+            val vm = newViewModel(
+                loader = FakeLoader(returns = source),
+                transformer = FakeTransformer(detectedKeyer = GREEN),
+            )
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+
+            vm.enablePicker()
+
+            assertTrue(vm.state.value.pickerActive)
+        }
+
+    @Test
+    fun `enablePicker is a no-op when no source is loaded`() = runTest(mainRule.testDispatcher) {
+        val vm = newViewModel()
+        vm.enablePicker()
+        assertFalse(vm.state.value.pickerActive)
+    }
+
+    @Test
+    fun `disablePicker deactivates picker mode`() = runTest(mainRule.testDispatcher) {
+        val source = mockk<Bitmap>(relaxed = true)
+        val vm = newViewModel(
+            loader = FakeLoader(returns = source),
+            transformer = FakeTransformer(detectedKeyer = GREEN),
+        )
+        vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+        advanceUntilIdle()
+        vm.enablePicker()
+        assertTrue(vm.state.value.pickerActive)
+
+        vm.disablePicker()
+
+        assertFalse(vm.state.value.pickerActive)
+    }
+
+    @Test
+    fun `pickColorAt reads source pixel sets target and disables picker`() =
+        runTest(mainRule.testDispatcher) {
+            val source = mockk<Bitmap>(relaxed = true).apply {
+                every { width } returns 100
+                every { height } returns 100
+                every { getPixel(50, 50) } returns 0x00112233 // alpha 0 to verify normalization
+            }
+            val vm = newViewModel(
+                loader = FakeLoader(returns = source),
+                transformer = FakeTransformer(detectedKeyer = GREEN),
+            )
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+            vm.enablePicker()
+
+            vm.pickColorAt(50, 50)
+
+            assertEquals(0xFF112233.toInt(), vm.state.value.targetColor)
+            assertFalse(vm.state.value.pickerActive)
+        }
+
+    @Test
+    fun `pickColorAt with out-of-bounds coords keeps target and disables picker`() =
+        runTest(mainRule.testDispatcher) {
+            val source = mockk<Bitmap>(relaxed = true).apply {
+                every { width } returns 100
+                every { height } returns 100
+            }
+            val vm = newViewModel(
+                loader = FakeLoader(returns = source),
+                transformer = FakeTransformer(detectedKeyer = GREEN),
+            )
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+            val targetBeforePick = vm.state.value.targetColor
+            vm.enablePicker()
+
+            vm.pickColorAt(-1, 50)
+
+            assertEquals(targetBeforePick, vm.state.value.targetColor)
+            assertFalse(vm.state.value.pickerActive)
+        }
+
+    @Test
+    fun `pickColorAt is a no-op when no source is loaded`() = runTest(mainRule.testDispatcher) {
+        val vm = newViewModel()
+        val targetBeforePick = vm.state.value.targetColor
+
+        vm.pickColorAt(50, 50)
+
+        assertEquals(targetBeforePick, vm.state.value.targetColor)
+        assertFalse(vm.state.value.pickerActive)
+    }
+
+    // ── Save ─────────────────────────────────────────────────────
+
     @Test
     fun `saveResult in AMOLED mode applies the amoled transform and saves`() =
         runTest(mainRule.testDispatcher) {
             val source = mockk<Bitmap>(relaxed = true)
             val amoledOut = mockk<Bitmap>(relaxed = true)
             val transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 amoledOutput = amoledOut,
             )
             val exporter = CountingExporter()
@@ -322,7 +438,7 @@ class EditorViewModelTest {
             val source = mockk<Bitmap>(relaxed = true)
             val transparentOut = mockk<Bitmap>(relaxed = true)
             val transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 transparentOutput = transparentOut,
             )
             val exporter = CountingExporter()
@@ -349,7 +465,7 @@ class EditorViewModelTest {
         runTest(mainRule.testDispatcher) {
             val source = mockk<Bitmap>(relaxed = true)
             val transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 amoledOutput = mockk(relaxed = true),
             )
             val exporter = CountingExporter(throwing = RuntimeException("disk full"))
@@ -391,7 +507,7 @@ class EditorViewModelTest {
         val vm = newViewModel(
             loader = FakeLoader(returns = source),
             transformer = FakeTransformer(
-                detectedKeyer = KeyerPreset.GREEN.argb,
+                detectedKeyer = GREEN,
                 amoledOutput = mockk(relaxed = true),
             ),
             exporter = CountingExporter(),
@@ -412,10 +528,10 @@ class EditorViewModelTest {
         runTest(mainRule.testDispatcher) {
             val vm = newViewModel()
             vm.state.test {
-                assertEquals(KeyerPreset.GREEN.argb, awaitItem().targetColor)
+                assertEquals(EditorState.DEFAULT_TARGET_COLOR, awaitItem().targetColor)
 
-                vm.applyPreset(KeyerPreset.BLUE)
-                assertEquals(KeyerPreset.BLUE.argb, awaitItem().targetColor)
+                vm.setTargetColor(BLUE)
+                assertEquals(BLUE, awaitItem().targetColor)
 
                 vm.setThreshold(99)
                 assertEquals(99, awaitItem().threshold)
@@ -423,6 +539,8 @@ class EditorViewModelTest {
                 cancelAndIgnoreRemainingEvents()
             }
         }
+
+    // ── Fixtures ─────────────────────────────────────────────────
 
     private fun newViewModel(
         loader: EditorViewModel.BitmapLoader = FakeLoader(returns = null),
@@ -493,5 +611,11 @@ class EditorViewModelTest {
             lastName = displayName
             throwing?.let { throw it }
         }
+    }
+
+    companion object {
+        private val GREEN: Int = 0xFF00FF00.toInt()
+        private val BLUE: Int = 0xFF0000FF.toInt()
+        private val PINK: Int = 0xFFFF00FF.toInt()
     }
 }

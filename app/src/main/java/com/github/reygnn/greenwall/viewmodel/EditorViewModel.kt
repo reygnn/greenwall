@@ -15,7 +15,6 @@ import com.github.reygnn.greenwall.imaging.KeyerDetection
 import com.github.reygnn.greenwall.imaging.complementaryRgb
 import com.github.reygnn.greenwall.model.EditorState
 import com.github.reygnn.greenwall.model.ExportMessage
-import com.github.reygnn.greenwall.model.KeyerPreset
 import com.github.reygnn.greenwall.model.OutputMode
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +52,7 @@ class EditorViewModel(
      * Loads the image at [uri]. On success, auto-detects the keyer color
      * from the image's outer border and stores it as the new target.
      * On failure, the source stays unloaded and the prior target is kept.
+     * Resets the picker mode in either case.
      */
     fun loadSource(context: Context, uri: Uri) {
         viewModelScope.launch {
@@ -60,23 +60,58 @@ class EditorViewModel(
             _overlayBitmap.value = null
             _sourceBitmap.value = bitmap
             if (bitmap == null) {
-                _state.update { it.copy(sourceLoaded = false) }
+                _state.update { it.copy(sourceLoaded = false, pickerActive = false) }
                 return@launch
             }
             val detected = withContext(ioDispatcher) {
                 transformer.detectKeyerColor(bitmap, KeyerDetection.DEFAULT_BORDER_PX)
             }
-            _state.update { it.copy(sourceLoaded = true, targetColor = detected) }
+            _state.update { it.copy(sourceLoaded = true, targetColor = detected, pickerActive = false) }
         }
     }
 
     fun setTargetColor(rgb: Int) {
-        if (_state.value.targetColor == rgb) return
-        _state.update { it.copy(targetColor = rgb) }
+        // Force alpha = 0xFF so callers (auto-detect, picker, presets) can
+        // pass any ARGB int without worrying about transparent target colors
+        // leaking into the UI swatch.
+        val normalized = rgb or 0xFF000000.toInt()
+        if (_state.value.targetColor == normalized) return
+        _state.update { it.copy(targetColor = normalized) }
         _overlayBitmap.value = null
     }
 
-    fun applyPreset(preset: KeyerPreset) = setTargetColor(preset.argb)
+    /** Activates pick-from-canvas mode. No-op if no source is loaded. */
+    fun enablePicker() {
+        if (!_state.value.sourceLoaded) return
+        if (_state.value.pickerActive) return
+        _state.update { it.copy(pickerActive = true) }
+    }
+
+    /** Deactivates pick-from-canvas mode. Idempotent. */
+    fun disablePicker() {
+        if (!_state.value.pickerActive) return
+        _state.update { it.copy(pickerActive = false) }
+    }
+
+    /**
+     * Picks the source pixel at ([bitmapX], [bitmapY]) as the new target
+     * color and deactivates picker mode. Out-of-bounds coordinates or a
+     * missing source short-circuit to just disabling the picker.
+     */
+    fun pickColorAt(bitmapX: Int, bitmapY: Int) {
+        val source = _sourceBitmap.value
+        if (source == null) {
+            disablePicker()
+            return
+        }
+        if (bitmapX < 0 || bitmapY < 0 || bitmapX >= source.width || bitmapY >= source.height) {
+            disablePicker()
+            return
+        }
+        val picked = source.getPixel(bitmapX, bitmapY)
+        setTargetColor(picked)
+        disablePicker()
+    }
 
     fun setThreshold(value: Int) {
         val clamped = value.coerceIn(EditorState.THRESHOLD_MIN, EditorState.THRESHOLD_MAX)

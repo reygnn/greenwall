@@ -8,13 +8,9 @@
     <!-- Befehle-Panel -->
     <string name="cp_title">Befehle</string>
     <string name="bc_pick_source">📂 Bild wählen</string>
+    <string name="cp_use_picker">💧 Tap aufs Bild</string>
     <string name="bc_threshold">Schwellenwert</string>
     <string name="bc_save_png">💾 PNG speichern</string>
-
-    <!-- Keyer-Farb-Presets -->
-    <string name="preset_green">Grün</string>
-    <string name="preset_blue">Blau</string>
-    <string name="preset_pink">Pink</string>
 
     <!-- Ausgabemodi -->
     <string name="output_amoled">AMOLED</string>

@@ -81,6 +81,9 @@ fun EditorScreen(
                 source = sourceImg,
                 overlay = overlayImg,
                 analysisVisible = state.analysisVisible,
+                pickerActive = state.pickerActive,
+                onPick = { bx, by -> viewModel.pickColorAt(bx, by) },
+                onCancel = viewModel::disablePicker,
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -102,7 +105,10 @@ fun EditorScreen(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                         )
                     },
-                    onApplyPreset = viewModel::applyPreset,
+                    onUsePicker = {
+                        commandsOpen = false
+                        viewModel.enablePicker()
+                    },
                     onThresholdChange = viewModel::setThreshold,
                     onOutputModeChange = viewModel::setOutputMode,
                     onSave = {

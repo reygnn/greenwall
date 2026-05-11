@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -38,14 +37,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.github.reygnn.greenwall.R
 import com.github.reygnn.greenwall.model.EditorState
-import com.github.reygnn.greenwall.model.KeyerPreset
 import com.github.reygnn.greenwall.model.OutputMode
 import kotlin.math.roundToInt
 
 /**
  * Floating Material card with the less-frequent editor actions:
  *  - Pick source image
- *  - Choose keyer color (target color swatch + three preset buttons)
+ *  - Show current target color swatch + activate the pipette (pick from canvas)
  *  - Threshold slider (0..255)
  *  - Output mode segmented control (AMOLED / Transparent)
  *  - Save PNG
@@ -58,7 +56,7 @@ import kotlin.math.roundToInt
 fun CommandsPanel(
     state: EditorState,
     onPickSource: () -> Unit,
-    onApplyPreset: (KeyerPreset) -> Unit,
+    onUsePicker: () -> Unit,
     onThresholdChange: (Int) -> Unit,
     onOutputModeChange: (OutputMode) -> Unit,
     onSave: () -> Unit,
@@ -103,25 +101,15 @@ fun CommandsPanel(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ColorSwatch(argb = state.targetColor)
-                PresetButton(
-                    label = stringResource(R.string.preset_green),
-                    onClick = { onApplyPreset(KeyerPreset.GREEN) },
+                OutlinedButton(
+                    onClick = onUsePicker,
+                    enabled = state.sourceLoaded,
                     modifier = Modifier.weight(1f),
-                )
-                PresetButton(
-                    label = stringResource(R.string.preset_blue),
-                    onClick = { onApplyPreset(KeyerPreset.BLUE) },
-                    modifier = Modifier.weight(1f),
-                )
-                PresetButton(
-                    label = stringResource(R.string.preset_pink),
-                    onClick = { onApplyPreset(KeyerPreset.PINK) },
-                    modifier = Modifier.weight(1f),
-                )
+                ) { Text(stringResource(R.string.cp_use_picker)) }
             }
 
             Column {
@@ -179,15 +167,4 @@ private fun ColorSwatch(argb: Int) {
             .background(Color(argb), shape)
             .border(1.dp, MaterialTheme.colorScheme.outline, shape),
     )
-}
-
-@Composable
-private fun PresetButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 4.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelSmall)
-    }
 }
