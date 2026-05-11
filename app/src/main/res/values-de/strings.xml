@@ -3,5 +3,31 @@
     <string name="app_name">greenwall</string>
 
     <!-- Editor — Empty-State -->
-    <string name="editor_empty_state">greenwall\n— Gerüst —</string>
+    <string name="editor_empty_state">Kein Bild geladen\nAuf 🛠 tippen, dann ☰ Befehle, dann 📂 Bild wählen</string>
+
+    <!-- Befehle-Panel -->
+    <string name="cp_title">Befehle</string>
+    <string name="bc_pick_source">📂 Bild wählen</string>
+    <string name="bc_threshold">Schwellenwert</string>
+    <string name="bc_save_png">💾 PNG speichern</string>
+
+    <!-- Keyer-Farb-Presets -->
+    <string name="preset_green">Grün</string>
+    <string name="preset_blue">Blau</string>
+    <string name="preset_pink">Pink</string>
+
+    <!-- Ausgabemodi -->
+    <string name="output_amoled">AMOLED</string>
+    <string name="output_transparent">Transparent</string>
+
+    <!-- Accessibility / Content-Descriptions -->
+    <string name="cd_toggle_analysis">Analyse-Overlay umschalten</string>
+    <string name="cd_redetect_keyer">Keyer-Farbe neu erkennen</string>
+    <string name="cd_open_commands">Befehle öffnen</string>
+    <string name="cd_close_panel">Panel schließen</string>
+
+    <!-- Export-Meldungen -->
+    <string name="msg_saved">✅ Gespeichert!</string>
+    <string name="msg_error">❌ Fehler: %1$s</string>
+    <string name="export_default_filename">greenwall.png</string>
 </resources>
