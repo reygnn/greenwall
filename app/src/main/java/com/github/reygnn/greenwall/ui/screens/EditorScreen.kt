@@ -67,8 +67,6 @@ fun EditorScreen(
         }
     }
 
-    val defaultFilenameAmoled = stringResource(R.string.export_default_filename_amoled)
-    val defaultFilenameTransparent = stringResource(R.string.export_default_filename_transparent)
     var commandsOpen by remember { mutableStateOf(false) }
 
     Scaffold { padding ->
@@ -118,14 +116,7 @@ fun EditorScreen(
                     onThresholdChange = viewModel::setThreshold,
                     onOutputModeChange = viewModel::setOutputMode,
                     onSave = {
-                        val fallback = when (state.outputMode) {
-                            OutputMode.AMOLED -> defaultFilenameAmoled
-                            OutputMode.TRANSPARENT -> defaultFilenameTransparent
-                        }
-                        viewModel.saveResult(
-                            context,
-                            generateFilename(state.outputMode, fallback),
-                        )
+                        viewModel.saveResult(context, generateFilename(state.outputMode))
                     },
                     onClose = { commandsOpen = false },
                     modifier = Modifier
@@ -137,8 +128,14 @@ fun EditorScreen(
     }
 }
 
-private fun generateFilename(outputMode: OutputMode, default: String): String {
+/**
+ * `greenwall_yyyymmdd_hhmmss_amoled.png` or `_transparent.png` — the
+ * timestamp uniquifies the filename and the suffix records which output
+ * mode produced it so identically-timestamped variants are
+ * distinguishable.
+ */
+private fun generateFilename(outputMode: OutputMode): String {
     val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
     val suffix = outputMode.name.lowercase(Locale.US)
-    return "greenwall_${ts}_$suffix.png".ifBlank { default }
+    return "greenwall_${ts}_$suffix.png"
 }

@@ -166,6 +166,55 @@ class ImageGeometryTest {
         assertNull(leftOfDraw)
     }
 
+    @Test
+    fun `canvasToBitmapPixel rejects sub-pixel taps just left of the bitmap`() {
+        // Regression: 100x100 in 200x100 fits 1.0 wide, drawn from canvas
+        // x=50..150. A tap at x=49.5 is half a canvas pixel LEFT of the
+        // bitmap and must return null. `.toInt()` would truncate the
+        // resulting -0.5 to 0 and falsely accept it as pixel (0, y);
+        // `floor()` correctly produces -1 and the bounds check rejects.
+        assertNull(ImageGeometry.canvasToBitmapPixel(49.5f, 50f, 100, 100, 200f, 100f))
+        assertNull(ImageGeometry.canvasToBitmapPixel(49.99f, 50f, 100, 100, 200f, 100f))
+        // The exact boundary is inclusive on the left edge.
+        assertEquals(0 to 50, ImageGeometry.canvasToBitmapPixel(50f, 50f, 100, 100, 200f, 100f))
+    }
+
+    @Test
+    fun `canvasToBitmapPixel rejects sub-pixel taps just above the bitmap`() {
+        // Same shape of bug on the vertical axis. 100x100 in 100x200
+        // fits 1.0 tall, drawn from canvas y=50..150. Taps at
+        // y < 50 must return null even when y is in (-1, 0) relative
+        // to the origin.
+        assertNull(ImageGeometry.canvasToBitmapPixel(50f, 49.5f, 100, 100, 100f, 200f))
+        assertEquals(50 to 0, ImageGeometry.canvasToBitmapPixel(50f, 50f, 100, 100, 100f, 200f))
+    }
+
+    @Test
+    fun `canvasToBitmapPixel at high zoom rejects sub-pixel taps over multiple canvas pixels`() {
+        // 100x100 in 200x200 at zoom 20: fit becomes 40 canvas px per
+        // bitmap pixel, drawn origin shifts to (-1900, -1900). A tap
+        // within (-40, 0) canvas px of the drawn origin would, under
+        // `.toInt()` truncation, falsely register as pixel (0, 0).
+        // floor() gives a negative index → null.
+        val drawn = ImageGeometry.displayPlacement(100, 100, 200f, 200f, zoom = 20f)
+        // Tap 20 canvas pixels left of the drawn origin: still inside
+        // the "bad zone" of the old truncation behavior, must be null.
+        assertNull(
+            ImageGeometry.canvasToBitmapPixel(
+                drawn.originX - 20f, drawn.originY + 10f,
+                100, 100, 200f, 200f, zoom = 20f,
+            )
+        )
+        // Tap exactly at the drawn origin → bitmap (0, 0).
+        assertEquals(
+            0 to 0,
+            ImageGeometry.canvasToBitmapPixel(
+                drawn.originX, drawn.originY,
+                100, 100, 200f, 200f, zoom = 20f,
+            )
+        )
+    }
+
     companion object {
         private const val EPS = 1e-4f
     }

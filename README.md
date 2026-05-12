@@ -85,7 +85,9 @@ speed-dial follows.
    pan/zoom.
 
 8. **🛠 → ☰ → 💾 Save PNG.** The result lands in `Pictures/greenwall/`
-   under `greenwall_yyyymmdd_hhmmss.png`.
+   under `greenwall_yyyymmdd_hhmmss_<mode>.png`, where `<mode>` is
+   either `amoled` or `transparent` so identically-timestamped
+   variants are distinguishable on disk.
 
 ---
 

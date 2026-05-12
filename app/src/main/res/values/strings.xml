@@ -27,6 +27,4 @@
     <!-- Export messages -->
     <string name="msg_saved">✅ Saved!</string>
     <string name="msg_error">❌ Error: %1$s</string>
-    <string name="export_default_filename_amoled">greenwall_amoled.png</string>
-    <string name="export_default_filename_transparent">greenwall_transparent.png</string>
 </resources>

@@ -1,5 +1,7 @@
 package com.github.reygnn.greenwall.imaging
 
+import kotlin.math.floor
+
 /**
  * Pure-Kotlin geometry helpers for mapping between canvas-space
  * coordinates (Compose pixels) and bitmap-space pixel indices,
@@ -70,6 +72,13 @@ internal object ImageGeometry {
      * and zoom factor (defaults reduce to plain fit-center). Returns
      * `null` if the tap falls outside the drawn bitmap region or any
      * dimension is degenerate.
+     *
+     * Floor (not truncate) is used to convert canvas → bitmap so that
+     * taps less than one drawn-pixel above or to the left of the
+     * bitmap correctly resolve to negative indices and get rejected.
+     * `.toInt()` truncates toward zero — `(-0.5f).toInt() == 0` —
+     * which would falsely accept those taps as pixel (0, 0). At
+     * `zoom = 20` the bad zone is up to 20 canvas pixels wide.
      */
     fun canvasToBitmapPixel(
         canvasX: Float,
@@ -86,8 +95,8 @@ internal object ImageGeometry {
         val placement = displayPlacement(bmpW, bmpH, canvasW, canvasH, panX, panY, zoom)
         if (placement.drawnW <= 0f) return null
         val fit = placement.drawnW / bmpW
-        val bx = ((canvasX - placement.originX) / fit).toInt()
-        val by = ((canvasY - placement.originY) / fit).toInt()
+        val bx = floor((canvasX - placement.originX) / fit).toInt()
+        val by = floor((canvasY - placement.originY) / fit).toInt()
         if (bx < 0 || by < 0 || bx >= bmpW || by >= bmpH) return null
         return bx to by
     }

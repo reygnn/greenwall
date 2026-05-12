@@ -16,10 +16,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -130,9 +132,12 @@ private fun MiniFab(
 ) {
     SmallFloatingActionButton(
         onClick = { if (enabled) onClick() },
-        modifier = Modifier.semantics {
-            this.contentDescription = contentDescription
-        },
+        modifier = Modifier
+            .alpha(if (enabled) 1f else 0.38f)
+            .semantics {
+                this.contentDescription = contentDescription
+                if (!enabled) disabled()
+            },
     ) {
         Text(symbol, fontSize = 20.sp)
     }

@@ -17,8 +17,10 @@ import com.github.reygnn.greenwall.model.EditorState
 import com.github.reygnn.greenwall.model.ExportMessage
 import com.github.reygnn.greenwall.model.OutputMode
 import com.github.reygnn.greenwall.model.ViewMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +54,26 @@ class EditorViewModel(
     private val _previewBitmap = MutableStateFlow<Bitmap?>(null)
     val previewBitmap: StateFlow<Bitmap?> = _previewBitmap.asStateFlow()
 
+    // In-flight job trackers. Every async operation cancels its previous
+    // job before launching a new one so that stale results — from an
+    // older slider position, an older redetect, or an older image — can
+    // never overwrite newer state. Without this, two rapid loadSource
+    // calls or a slider-drag while a previous analysis is mid-flight
+    // race for the StateFlow write and the loser wins about half the
+    // time on real devices.
+    private var loadJob: Job? = null
+    private var detectJob: Job? = null
+    private var analysisJob: Job? = null
+    private var previewJob: Job? = null
+
+    // ViewMode held in trust during picker mode. enablePicker forces
+    // SOURCE so the user picks the pixel they see; on disable/pick we
+    // restore whatever they had before so they don't have to re-toggle
+    // ANALYSIS or PREVIEW manually. Transient on purpose — process
+    // death drops it, which is fine: re-entering picker after a kill
+    // would re-record from the (recovered) SOURCE view anyway.
+    private var preservedViewMode: ViewMode? = null
+
     /**
      * Loads the image at [uri]. On success, auto-detects the keyer color
      * from the image's outer border and stores it as the new target.
@@ -60,7 +82,15 @@ class EditorViewModel(
      * both cached preview and analysis bitmaps.
      */
     fun loadSource(context: Context, uri: Uri) {
-        viewModelScope.launch {
+        // Cancel everything in flight against the previous source — a
+        // late detection or compute landing into the new state would
+        // produce confusing visuals.
+        loadJob?.cancel()
+        detectJob?.cancel()
+        analysisJob?.cancel()
+        previewJob?.cancel()
+        preservedViewMode = null
+        loadJob = viewModelScope.launch {
             val bitmap = withContext(ioDispatcher) { loader.load(context, uri) }
             _overlayBitmap.value = null
             _previewBitmap.value = null
@@ -96,21 +126,44 @@ class EditorViewModel(
         val normalized = rgb or 0xFF000000.toInt()
         if (_state.value.targetColor == normalized) return
         _state.update { it.copy(targetColor = normalized) }
-        _overlayBitmap.value = null
-        _previewBitmap.value = null
+        invalidateAndMaybeRecompute()
     }
 
-    /** Activates pick-from-canvas mode. No-op if no source is loaded. */
+    /**
+     * Activates pick-from-canvas mode. No-op if no source is loaded.
+     * Forces the view back to SOURCE so the pixel the user taps is the
+     * pixel they pick — picking off the despill'd preview or the
+     * complement-recolored analysis overlay would be visually
+     * misleading even though the picker reads from the underlying
+     * source bitmap. The pre-picker [ViewMode] is remembered so
+     * [disablePicker] / [pickColorAt] can return the user to it
+     * without a manual re-toggle.
+     */
     fun enablePicker() {
         if (!_state.value.sourceLoaded) return
         if (_state.value.pickerActive) return
-        _state.update { it.copy(pickerActive = true) }
+        preservedViewMode = _state.value.viewMode
+        _state.update { it.copy(pickerActive = true, viewMode = ViewMode.SOURCE) }
     }
 
-    /** Deactivates pick-from-canvas mode. Idempotent. */
+    /**
+     * Deactivates pick-from-canvas mode and restores the [ViewMode]
+     * that was active before [enablePicker]. If the restored mode is
+     * ANALYSIS or PREVIEW and its cache was invalidated during the
+     * pick (e.g. by [setTargetColor] inside [pickColorAt]), the
+     * corresponding compute is kicked off so the canvas doesn't
+     * collapse to the bare source.
+     */
     fun disablePicker() {
         if (!_state.value.pickerActive) return
-        _state.update { it.copy(pickerActive = false) }
+        val restored = preservedViewMode ?: ViewMode.SOURCE
+        preservedViewMode = null
+        _state.update { it.copy(pickerActive = false, viewMode = restored) }
+        when (restored) {
+            ViewMode.ANALYSIS -> if (_overlayBitmap.value == null) runAnalysis()
+            ViewMode.PREVIEW -> if (_previewBitmap.value == null) runPreview()
+            ViewMode.SOURCE -> { /* nothing to recompute */ }
+        }
     }
 
     /**
@@ -137,16 +190,19 @@ class EditorViewModel(
         val clamped = value.coerceIn(EditorState.THRESHOLD_MIN, EditorState.THRESHOLD_MAX)
         if (_state.value.threshold == clamped) return
         _state.update { it.copy(threshold = clamped) }
-        _overlayBitmap.value = null
-        _previewBitmap.value = null
+        invalidateAndMaybeRecompute()
     }
 
     fun setOutputMode(mode: OutputMode) {
         if (_state.value.outputMode == mode) return
         _state.update { it.copy(outputMode = mode) }
-        // Analysis overlay is independent of outputMode (it shows the match
-        // mask only); only the preview cache needs to drop.
+        // Analysis overlay is independent of outputMode (mask only) so
+        // only the preview cache needs to drop. If we're currently
+        // viewing the preview, recompute immediately so the canvas
+        // doesn't collapse back to the bare source.
+        previewJob?.cancel()
         _previewBitmap.value = null
+        if (_state.value.viewMode == ViewMode.PREVIEW) runPreview()
     }
 
     /**
@@ -183,7 +239,8 @@ class EditorViewModel(
         val target = _state.value.targetColor
         val threshold = _state.value.threshold
         val overlayColor = complementaryRgb(target)
-        viewModelScope.launch {
+        analysisJob?.cancel()
+        analysisJob = viewModelScope.launch {
             val result = withContext(ioDispatcher) {
                 transformer.analyze(source, target, threshold, overlayColor)
             }
@@ -201,7 +258,8 @@ class EditorViewModel(
         val target = _state.value.targetColor
         val threshold = _state.value.threshold
         val mode = _state.value.outputMode
-        viewModelScope.launch {
+        previewJob?.cancel()
+        previewJob = viewModelScope.launch {
             val result = withContext(ioDispatcher) {
                 when (mode) {
                     OutputMode.AMOLED -> transformer.applyAmoled(source, target, threshold)
@@ -212,15 +270,23 @@ class EditorViewModel(
         }
     }
 
-    /** Re-runs keyer auto-detection on the currently loaded source. */
+    /**
+     * Re-runs keyer auto-detection on the currently loaded source.
+     * Target color is the input to both the analysis-overlay mask AND
+     * the preview's match/despill pipeline, so both caches must drop —
+     * the original implementation only cleared the analysis overlay,
+     * which left a stale preview after a redetect that landed on a
+     * different color than the prior target.
+     */
     fun redetectKeyer() {
         val source = _sourceBitmap.value ?: return
-        viewModelScope.launch {
+        detectJob?.cancel()
+        detectJob = viewModelScope.launch {
             val detected = withContext(ioDispatcher) {
                 transformer.detectKeyerColor(source, KeyerDetection.DEFAULT_BORDER_PX)
             }
             _state.update { it.copy(targetColor = detected) }
-            _overlayBitmap.value = null
+            invalidateAndMaybeRecompute()
         }
     }
 
@@ -244,7 +310,16 @@ class EditorViewModel(
                     }
                     exporter.save(context, result, displayName)
                     ExportMessage.Saved as ExportMessage
-                }.getOrElse { e -> ExportMessage.Error(e.message) }
+                }.getOrElse { e ->
+                    // CancellationException must propagate so structured
+                    // concurrency is preserved. runCatching catches
+                    // Throwable indiscriminately; without this guard a
+                    // cancelled save coroutine would land in state as
+                    // ExportMessage.Error("Job was cancelled") and mask
+                    // the cancellation.
+                    if (e is CancellationException) throw e
+                    ExportMessage.Error(e.message)
+                }
             }
             _state.update { it.copy(isExporting = false, exportMessage = message) }
         }
@@ -252,6 +327,29 @@ class EditorViewModel(
 
     fun clearExportMessage() {
         _state.update { it.copy(exportMessage = null) }
+    }
+
+    /**
+     * Drops both derived-bitmap caches and — if the user is currently
+     * viewing one — immediately recomputes it. Without the recompute
+     * the canvas falls back to the bare source bitmap mid-slider-drag
+     * (see ImageCanvas: `overlay ?: source`, `preview ?: source`) which
+     * looks like the view-mode silently flipped off.
+     *
+     * The in-flight job cancellations inside [runAnalysis] / [runPreview]
+     * mean rapid slider drags don't queue work — every new threshold
+     * value supersedes the previous compute.
+     */
+    private fun invalidateAndMaybeRecompute() {
+        analysisJob?.cancel()
+        previewJob?.cancel()
+        _overlayBitmap.value = null
+        _previewBitmap.value = null
+        when (_state.value.viewMode) {
+            ViewMode.ANALYSIS -> runAnalysis()
+            ViewMode.PREVIEW -> runPreview()
+            ViewMode.SOURCE -> Unit
+        }
     }
 
     /**

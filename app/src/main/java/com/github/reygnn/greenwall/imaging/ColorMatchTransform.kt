@@ -85,6 +85,10 @@ internal object ColorMatchTransform {
         var r = (argb shr 16) and 0xFF
         var g = (argb shr 8) and 0xFF
         var b = argb and 0xFF
+        // Three-dominant is impossible (cannot have all three channels
+        // strictly above their integer mean simultaneously), and the
+        // none-dominant case returned early above, so the `when` is
+        // exhaustive over the reachable cases.
         val cap = when {
             rDom && gDom -> b
             rDom && bDom -> g
@@ -92,7 +96,7 @@ internal object ColorMatchTransform {
             rDom -> maxOf(g, b)
             gDom -> maxOf(r, b)
             bDom -> maxOf(r, g)
-            else -> return argb
+            else -> error("unreachable: at least one channel must be dominant here")
         }
         if (rDom) r = minOf(r, cap)
         if (gDom) g = minOf(g, cap)
