@@ -987,6 +987,62 @@ class EditorViewModelTest {
         }
 
     @Test
+    fun `rapid setThreshold drag in ANALYSIS coalesces into a single recompute`() =
+        runTest(mainRule.testDispatcher) {
+            // A slider drag fires setThreshold on every tick. The debounced
+            // recompute trigger must collapse the whole burst into one
+            // analyze() once the value settles, instead of spawning a
+            // pixel-kernel worker per tick (battery / heat on big bitmaps).
+            val source = mockk<Bitmap>(relaxed = true)
+            val transformer = FakeTransformer(
+                detectedKeyer = GREEN,
+                analysisOverlay = mockk(relaxed = true),
+            )
+            val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+            vm.toggleAnalysis()
+            advanceUntilIdle()
+            assertEquals(1, transformer.analyzeCalls)
+
+            // Many ticks with no virtual time advancing between them, so
+            // they all land inside a single debounce window.
+            for (t in 30..60) vm.setThreshold(t)
+            advanceUntilIdle()
+
+            assertEquals("a settled drag must recompute exactly once", 2, transformer.analyzeCalls)
+            // The recompute reflects the latest slider value, not an
+            // intermediate one that got coalesced away.
+            assertEquals(60, vm.state.value.threshold)
+        }
+
+    @Test
+    fun `well-separated setThreshold changes each trigger their own recompute`() =
+        runTest(mainRule.testDispatcher) {
+            // Debounce coalesces a burst, but it must not permanently
+            // suppress: two changes that each settle before the next one
+            // arrives recompute independently.
+            val source = mockk<Bitmap>(relaxed = true)
+            val transformer = FakeTransformer(
+                detectedKeyer = GREEN,
+                analysisOverlay = mockk(relaxed = true),
+            )
+            val vm = newViewModel(loader = FakeLoader(returns = source), transformer = transformer)
+            vm.loadSource(mockk(relaxed = true), mockk(relaxed = true))
+            advanceUntilIdle()
+            vm.toggleAnalysis()
+            advanceUntilIdle()
+            assertEquals(1, transformer.analyzeCalls)
+
+            vm.setThreshold(50)
+            advanceUntilIdle() // value settles → recompute #2
+            vm.setThreshold(120)
+            advanceUntilIdle() // settles again → recompute #3
+
+            assertEquals(3, transformer.analyzeCalls)
+        }
+
+    @Test
     fun `setTargetColor in PREVIEW view re-runs preview`() =
         runTest(mainRule.testDispatcher) {
             val source = mockk<Bitmap>(relaxed = true)

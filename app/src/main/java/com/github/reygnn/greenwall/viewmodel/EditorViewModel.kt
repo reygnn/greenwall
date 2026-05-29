@@ -20,13 +20,19 @@ import com.github.reygnn.greenwall.model.ViewMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Result of analyzing a bitmap for keyer matches: the overlay [bitmap]
@@ -73,6 +79,33 @@ class EditorViewModel(
     // death drops it, which is fine: re-entering picker after a kill
     // would re-record from the (recovered) SOURCE view anyway.
     private var preservedViewMode: ViewMode? = null
+
+    // Recompute trigger for the threshold slider. setThreshold fires on
+    // every slider tick, but the pixel kernels don't suspend, so a
+    // cancelled worker on Dispatchers.IO still runs to completion and only
+    // its result is discarded — a fast drag over a large bitmap leaves
+    // several throwaway workers grinding in parallel (battery / heat).
+    // Routing the slider through this debounced trigger coalesces a drag
+    // into a single recompute once the value settles (see [RECOMPUTE_DEBOUNCE]).
+    // Only the expensive compute is debounced; setThreshold still updates
+    // the slider state and invalidates the caches synchronously.
+    private val recomputeTrigger = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    init {
+        observeRecomputeTrigger()
+    }
+
+    @OptIn(FlowPreview::class)
+    private fun observeRecomputeTrigger() {
+        viewModelScope.launch {
+            recomputeTrigger
+                .debounce(RECOMPUTE_DEBOUNCE)
+                .collectLatest { recomputeCurrentView() }
+        }
+    }
 
     /**
      * Loads the image at [uri]. On success, auto-detects the keyer color
@@ -190,7 +223,11 @@ class EditorViewModel(
         val clamped = value.coerceIn(EditorState.THRESHOLD_MIN, EditorState.THRESHOLD_MAX)
         if (_state.value.threshold == clamped) return
         _state.update { it.copy(threshold = clamped) }
-        invalidateAndMaybeRecompute()
+        // Invalidate synchronously so a later view toggle never reads a
+        // stale cache, but debounce the recompute itself — unlike the
+        // discrete target/redetect setters, the slider fires continuously.
+        invalidateCaches()
+        recomputeTrigger.tryEmit(Unit)
     }
 
     fun setOutputMode(mode: OutputMode) {
@@ -332,19 +369,29 @@ class EditorViewModel(
     /**
      * Drops both derived-bitmap caches and — if the user is currently
      * viewing one — immediately recomputes it. Without the recompute
-     * the canvas falls back to the bare source bitmap mid-slider-drag
-     * (see ImageCanvas: `overlay ?: source`, `preview ?: source`) which
-     * looks like the view-mode silently flipped off.
+     * the canvas falls back to the bare source bitmap (see ImageCanvas:
+     * `overlay ?: source`, `preview ?: source`) which looks like the
+     * view-mode silently flipped off.
      *
-     * The in-flight job cancellations inside [runAnalysis] / [runPreview]
-     * mean rapid slider drags don't queue work — every new threshold
-     * value supersedes the previous compute.
+     * Used by the discrete setters ([setTargetColor], [redetectKeyer])
+     * that fire once per user action. The continuous threshold slider
+     * goes through [recomputeTrigger] instead so a fast drag is debounced.
      */
     private fun invalidateAndMaybeRecompute() {
+        invalidateCaches()
+        recomputeCurrentView()
+    }
+
+    /** Cancels in-flight compute jobs and clears both derived-bitmap caches. */
+    private fun invalidateCaches() {
         analysisJob?.cancel()
         previewJob?.cancel()
         _overlayBitmap.value = null
         _previewBitmap.value = null
+    }
+
+    /** Recomputes the cache backing the current [ViewMode], if any. */
+    private fun recomputeCurrentView() {
         when (_state.value.viewMode) {
             ViewMode.ANALYSIS -> runAnalysis()
             ViewMode.PREVIEW -> runPreview()
@@ -413,6 +460,12 @@ class EditorViewModel(
     }
 
     companion object {
+        // Quiet period after the last threshold change before the
+        // analysis / preview recompute runs. Long enough to coalesce a
+        // fast slider drag into one compute, short enough to still feel
+        // immediate when the user stops moving.
+        private val RECOMPUTE_DEBOUNCE = 50.milliseconds
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer { EditorViewModel() }
         }

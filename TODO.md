@@ -23,14 +23,14 @@
   ist raus. Default-Target ist jetzt `EditorState.DEFAULT_TARGET_COLOR`
   (hartkodiert auf `0xFF00FF00`).
 
-- [ ] Debounce für Recompute-Trigger in `EditorViewModel`. Aktueller
-  Zustand: jeder Slider-Tick durch `setThreshold` triggert sofort
-  `runAnalysis` / `runPreview` (mit Cancellation des Vorgängers). Aber
-  die Pixel-Kernel suspenden nirgends, also läuft der gecancelte
-  Worker auf `Dispatchers.IO` zu Ende — nur das Ergebnis wird
-  verworfen. Bei großem Bitmap + flotterem Drag rödeln mehrere Worker
-  parallel mit Wegwerf-Output (Akku/Wärme). Saubere Lösung: separater
-  `MutableSharedFlow<Unit>` als Recompute-Trigger, mit `.debounce(50.milliseconds)`
-  und `.collectLatest { runAnalysis()/runPreview() }`. Slider-State
-  selbst muss responsiv bleiben — nur die Compute-Kette debouncen,
-  nicht den State-Change.
+- [x] Debounce für Recompute-Trigger in `EditorViewModel`. Umgesetzt in
+  `refactor/debounce-recompute`: neuer `MutableSharedFlow<Unit>`
+  (`recomputeTrigger`), den `setThreshold` per `tryEmit` füttert, mit
+  einem `.debounce(50.milliseconds).collectLatest { recomputeCurrentView() }`-
+  Collector im `init`. Nur der kontinuierliche Slider läuft über den
+  Trigger; die diskreten Setter (`setTargetColor`, `redetectKeyer`)
+  bleiben auf dem sofortigen `invalidateAndMaybeRecompute`-Pfad. Slider-
+  State + Cache-Invalidierung passieren weiter synchron in `setThreshold`
+  — nur die teure Berechnung wird debounced, sodass ein flotter Drag in
+  eine einzige `analyze`/`apply`-Berechnung kollabiert statt pro Tick
+  einen Wegwerf-Worker auf `Dispatchers.IO` zu starten.
