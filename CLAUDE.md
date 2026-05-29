@@ -21,7 +21,7 @@ the human-Claude workflow, see `WHY_CLAUDE.md`. greenwall is a sibling to
 
 ## Stack
 
-- Kotlin 2.2.21, Jetpack Compose + Material 3, Compose BOM 2026.03.01
+- Kotlin 2.3.21, Jetpack Compose + Material 3, Compose BOM 2026.05.01
 - Min/target/compile SDK 36 — **Android 16 only**, no compatibility shims
 - JDK 21 at build/test time (Robolectric 4.16.1 needs it for SDK 36)
 - Single Gradle module (`:app`)
